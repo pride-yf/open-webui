@@ -8,10 +8,10 @@
 |---|---|---|
 | Docker Engine + Compose v2 | 已有，检查版本即可 | 本指南使用 `docker compose`，不是旧版 `docker-compose` |
 | Nginx + 已有域名 HTTPS 证书 | 已有 | 支持流式输出和 WebSocket，见配置片段 |
-| curl、openssl、tar、Bash | Ubuntu 通常已有 | 下载配置、生成密钥和备份；缺少时 `sudo apt-get install curl openssl tar` |
+| Git、curl、openssl、tar、Bash | Ubuntu 通常已有 | Git 拉取与更新仓库，curl 检查健康状态，openssl/tar 用于密钥与备份；缺少时 `sudo apt-get install git curl openssl tar` |
 | Open WebUI 官方 Docker 镜像 | 首次拉取 | 唯一新增的长期运行服务 |
 | SQLite | 不需要单独安装 | 随应用镜像提供，数据库在 `./data` 下 |
-| Python、Node.js、Git | 不需要在宿主机安装 | 运行依赖在镜像内；部署无需源码或 Git |
+| Python、Node.js | 不需要在宿主机安装 | 应用运行依赖在镜像内 |
 | Ollama、GPU/CUDA、Redis、PostgreSQL、独立向量数据库 | 当前不需要 | 不引入这些服务 |
 | 外部模型 API | 需要可用账号和 API Key | 服务器需要能访问供应商地址；模型调用单独计费 |
 
@@ -19,24 +19,24 @@
 
 网络依赖：拉取镜像需要访问 `ghcr.io` 及其下载端点；获取配置需要访问 GitHub；聊天需要访问模型供应商。当前绕过文件向量检索，以全文方式提供附件内容，并预留远程 embedding 接口（尚未指定模型），避免初次启动加载本地 embedding 模型。默认禁止 Hugging Face 在线下载和 embedding 模型自动更新，不影响外部聊天 API。以后启用知识库向量检索前，需要在管理设置中配置实际可用的 embedding 供应商、模型、API Key，并关闭绕过检索；如果选择本地 embedding、语音或 OCR，可能需要开放模型下载或接入相应第三方 API。Docker 拉取镜像与容器访问模型 API 使用不同的网络路径，宿主机 shell 的代理不一定自动对二者生效。
 
-## 2. 获取配置，无需克隆仓库
+## 2. 在服务器使用 Git 克隆仓库
 
 用具备 Docker 权限的服务器账号执行；下面以 root 运维为例：
 
 ```bash
 sudo -i
-install -d -m 700 /opt/open-webui
-cd /opt/open-webui
-BASE=https://raw.githubusercontent.com/pride-yf/open-webui/personal-deploy/deploy/personal
-for f in compose.yaml .env.example backup.sh nginx-location.conf.example README.zh-CN.md; do
-  curl --fail --show-error --location "$BASE/$f" --output "$f" || exit 1
-done
+git clone --branch personal-deploy --single-branch --depth 1 \
+  https://github.com/pride-yf/open-webui.git /opt/open-webui-repo
+cd /opt/open-webui-repo/deploy/personal
 cp -n .env.example .env
 chmod 600 .env
-chmod 700 backup.sh
 ```
 
-也可以把本部署包直接上传到 `/opt/open-webui`。配置更新前保留现有 `.env` 和 `data`，不要用示例覆盖实际配置。
+仓库公开，HTTPS 克隆不需要 GitHub 登录或 Token。Git 克隆的是指定分支的浅副本，后续可以继续 `git pull`；需要完整历史开发时再执行 `git fetch --unshallow`。
+
+**后续所有部署、备份和恢复命令，都在 `/opt/open-webui-repo/deploy/personal` 执行。不要在仓库根目录执行 `docker compose up`，根目录是上游的另一套部署配置。** 当前仍运行固定版本官方镜像，拉取仓库不会触发源码编译。`.env`、`data/`、`backups/` 已在本目录的 `.gitignore` 中排除，不会被正常 Git 更新覆盖。
+
+这里使用新的 `/opt/open-webui-repo` 路径，避免与上一版逐文件部署的 `/opt/open-webui` 冲突。如果之前仅下载了配置但未启动，直接使用新目录即可。如果旧实例已有账号或聊天记录，请在首次启动新目录前迁移：先在旧目录备份并停止服务，再把旧 `.env` 和整个 `data` 目录复制到新部署目录（目标 `data` 应尚不存在），然后从新目录启动。保留旧目录作为恢复副本，不要同时启动两份实例。旧配置及数据优先，不要用示例覆盖它们。
 
 ## 3. 首次启动
 
@@ -100,7 +100,7 @@ sudo systemctl reload nginx
 备份会短暂停止 Open WebUI，保证 SQLite 和附件的一致性，然后恢复之前正在运行的服务：
 
 ```bash
-cd /opt/open-webui
+cd /opt/open-webui-repo/deploy/personal
 ./backup.sh
 ```
 
@@ -109,7 +109,7 @@ cd /opt/open-webui
 升级时先阅读目标版本 release notes，确认插件兼容性，并核对 GitHub 发布的正式版本号，不使用 `main` / `latest` 浮动标签。步骤如下：
 
 ```bash
-cd /opt/open-webui
+cd /opt/open-webui-repo/deploy/personal
 ./backup.sh
 # 记下刚生成的备份路径；只有备份成功才继续。
 nano .env
@@ -124,12 +124,25 @@ curl --fail http://127.0.0.1:3000/health
 
 再验证登录、历史对话、一次真实模型回答、手机访问与附件。不要配置自动更新生产容器；数据库迁移可能让旧镜像无法直接读取新数据库。
 
+**通过 Git 更新部署配置：** 对已运行的实例，先执行上述备份，再拉取个人分支：
+
+```bash
+cd /opt/open-webui-repo
+git status --short
+git pull --ff-only origin personal-deploy
+cd deploy/personal
+docker compose config --quiet
+docker compose up -d
+```
+
+如果 `git status` 显示你改过受版本管理的配置，先检查并保留这些修改；若拉取失败，先处理差异再继续部署，不使用强制重置。服务器专属值尽量只写 `.env`。`git pull` 更新仓库文件，不会自动升级 `.env` 中固定的应用镜像版本；模型服务的版本升级仍按前面的备份、改镜像、拉取与验证步骤执行。
+
 ## 7. 回退必须同时恢复数据和旧配置
 
 先选定升级前的可信备份。以下操作会恢复到该备份的时间点；之后的新对话不在恢复数据中。先停止实例，再保留失败现场，最后恢复：
 
 ```bash
-cd /opt/open-webui
+cd /opt/open-webui-repo/deploy/personal
 docker compose stop -t 60 open-webui
 RECOVERY_DIR="recovery-$(date -u +%Y%m%dT%H%M%SZ)"
 install -d -m 700 "$RECOVERY_DIR"
@@ -143,6 +156,8 @@ docker compose up -d
 ```
 
 恢复会取回旧版本 `OPEN_WEBUI_IMAGE`、原密钥与旧数据库。不要仅切换旧镜像而继续使用已迁移的数据库。恢复成功前保留 `recovery-*` 目录。
+
+如果恢复的 `compose.yaml` 与当前 Git 版本不同，Git 会显示本地修改。这是预期现象；下次更新前检查差异并决定保留或迁移，不要直接强制覆盖恢复配置。
 
 ## 8. Fork、升级与扩展的分工
 
