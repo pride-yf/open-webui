@@ -1,0 +1,48 @@
+name: open-webui-personal
+
+services:
+  open-webui:
+    image: ${OPEN_WEBUI_IMAGE:?Set OPEN_WEBUI_IMAGE in .env}
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_BIND_IP:-127.0.0.1}:${WEBUI_PORT:-3000}:8080"
+    environment:
+      WEBUI_URL: ${WEBUI_URL:?Set the public HTTPS URL in .env}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Generate a secret in .env}
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "false"
+      WEBUI_ADMIN_EMAIL: ${WEBUI_ADMIN_EMAIL:-}
+      WEBUI_ADMIN_PASSWORD: ${WEBUI_ADMIN_PASSWORD:-}
+      WEBUI_ADMIN_NAME: ${WEBUI_ADMIN_NAME:-Learner}
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ENABLE_PERSISTENT_CONFIG: "true"
+      ENABLE_CODE_EXECUTION: "false"
+      ENABLE_CODE_INTERPRETER: "false"
+      ENABLE_DIRECT_CONNECTIONS: "false"
+      ENABLE_AUTOCOMPLETE_GENERATION: "false"
+      ENABLE_FOLLOW_UP_GENERATION: "false"
+      ENABLE_TAGS_GENERATION: "false"
+      ENABLE_TITLE_GENERATION: "false"
+      RAG_EMBEDDING_MODEL_AUTO_UPDATE: "false"
+      RAG_RERANKING_MODEL_AUTO_UPDATE: "false"
+      HF_HUB_OFFLINE: "1"
+      DO_NOT_TRACK: "true"
+      SCARF_NO_ANALYTICS: "true"
+      ANONYMIZED_TELEMETRY: "false"
+    volumes:
+      - ./data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
