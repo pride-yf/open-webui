@@ -26,6 +26,9 @@ services:
       ENABLE_FOLLOW_UP_GENERATION: "false"
       ENABLE_TAGS_GENERATION: "false"
       ENABLE_TITLE_GENERATION: "false"
+      BYPASS_EMBEDDING_AND_RETRIEVAL: "true"
+      RAG_EMBEDDING_ENGINE: "openai"
+      RAG_EMBEDDING_MODEL: ""
       RAG_EMBEDDING_MODEL_AUTO_UPDATE: "false"
       RAG_RERANKING_MODEL_AUTO_UPDATE: "false"
       HF_HUB_OFFLINE: "1"
@@ -45,4 +48,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
