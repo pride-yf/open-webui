@@ -3,10 +3,16 @@ name: open-webui-personal
 services:
   open-webui:
     image: ${OPEN_WEBUI_IMAGE:?Set OPEN_WEBUI_IMAGE in .env}
-    restart: unless-stopped
+    # Protect a shared small host; exceeding the budget may stop this service.
+    restart: "on-failure:3"
+    mem_limit: ${WEBUI_MEM_LIMIT:-512m}
+    # RAM + swap combined; at most 256 MiB swap with the default 512 MiB RAM cap.
+    memswap_limit: ${WEBUI_MEMSWAP_LIMIT:-768m}
+    cpus: ${WEBUI_CPUS:-1.0}
     ports:
       - "${WEBUI_BIND_IP:-127.0.0.1}:${WEBUI_PORT:-3000}:8080"
     environment:
+      UVICORN_WORKERS: "1"
       WEBUI_URL: ${WEBUI_URL:?Set the public HTTPS URL in .env}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Generate a secret in .env}
       WEBUI_AUTH: "true"

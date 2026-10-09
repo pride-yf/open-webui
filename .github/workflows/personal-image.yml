@@ -41,6 +41,7 @@ jobs:
           file: Dockerfile
           push: true
           platforms: linux/amd64
+          build-args: USE_SLIM=true
           tags: ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha

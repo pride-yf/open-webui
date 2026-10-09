@@ -1,6 +1,6 @@
 # 个人 Open WebUI：Ubuntu + Docker Compose + 已有 Nginx
 
-基线：Open WebUI **v0.11.4**（2026-10-08 核对的上游最新稳定版）。单用户、API 对话、服务端保存历史记录与附件。使用官方标准镜像，不在服务器编译源码。
+基线：Open WebUI **v0.11.4**（2026-10-08 核对的上游最新稳定版）。单用户、API 对话、服务端保存历史记录与附件。使用官方 slim 镜像，不在服务器编译源码。2026-10-09 已针对共享小内存服务器增加资源限制；已有实例请先按 [OOM 后迁移说明](./LOW-MEMORY.zh-CN.md) 操作，尤其要手动修改已有 .env 中的镜像。
 
 ## 1. 服务器上的依赖
 
@@ -15,9 +15,9 @@
 | Ollama、GPU/CUDA、Redis、PostgreSQL、独立向量数据库 | 当前不需要 | 不引入这些服务 |
 | 外部模型 API | 需要可用账号和 API Key | 服务器需要能访问供应商地址；模型调用单独计费 |
 
-建议起步 2 vCPU、4 GB RAM，预留至少 20 GB 磁盘给镜像、聊天附件和备份；这是运维建议，不是官方最低配置。标准镜像包含本地文档/音频处理依赖与缓存模型，明显大于 slim。此处采用标准版以便后续扩展，避免把 slim 当成功能完全相同的替代品。
+建议起步 2 vCPU、4 GB RAM，预留磁盘给镜像、聊天附件和备份；这是运维建议，不是官方最低配置。对于 2 GB 且运行其他服务的机器，默认只给 Open WebUI 512 MiB RAM、256 MiB 可选 swap、1 核 CPU，并固定单 worker。slim 省去本地机器学习与文档处理依赖，但不承诺能在该预算内稳定运行。详细功能限制、swap 与验收步骤见 LOW-MEMORY.zh-CN.md。
 
-网络依赖：拉取镜像需要访问 `ghcr.io` 及其下载端点；获取配置需要访问 GitHub；聊天需要访问模型供应商。当前绕过文件向量检索，以全文方式提供附件内容，并预留远程 embedding 接口（尚未指定模型），避免初次启动加载本地 embedding 模型。默认禁止 Hugging Face 在线下载和 embedding 模型自动更新，不影响外部聊天 API。以后启用知识库向量检索前，需要在管理设置中配置实际可用的 embedding 供应商、模型、API Key，并关闭绕过检索；如果选择本地 embedding、语音或 OCR，可能需要开放模型下载或接入相应第三方 API。Docker 拉取镜像与容器访问模型 API 使用不同的网络路径，宿主机 shell 的代理不一定自动对二者生效。
+网络依赖：拉取镜像需要访问 `ghcr.io` 及其下载端点；获取配置需要访问 GitHub；聊天需要访问模型供应商。当前绕过文件向量检索，以全文方式提供附件内容，并预留远程 embedding 接口（尚未指定模型），避免初次启动加载本地 embedding 模型。默认禁止 Hugging Face 在线下载和 embedding 模型自动更新，不影响外部聊天 API。以后启用知识库向量检索前，需要在管理设置中配置实际可用的 embedding 供应商、模型、API Key，并关闭绕过检索；slim 的 embedding、语音或 PDF/Office 提取需要相应外部服务；向量检索还需要 PostgreSQL + pgvector。本地模型运行需要切回标准版并重新评估资源，不建议在当前共享小机器上启用。Docker 拉取镜像与容器访问模型 API 使用不同的网络路径，宿主机 shell 的代理不一定自动对二者生效。
 
 ## 2. 在服务器使用 Git 克隆仓库
 
@@ -67,7 +67,7 @@ docker compose ps
 curl --fail http://127.0.0.1:3000/health
 ```
 
-首次初始化可能需要一段时间。健康接口暂未就绪时，用 `docker compose logs --tail=100 open-webui` 排查并稍后重试。不要通过删除 `data` 解决启动问题。
+默认失败最多重试三次（on-failure:3）；主机或 Docker 重启后需手动执行 docker compose up -d。首次初始化可能需要一段时间。健康接口暂未就绪时，用 `docker compose logs --tail=100 open-webui` 排查并稍后重试。不要通过删除 `data` 解决启动问题。
 
 管理员环境变量只在空数据库时用于创建管理员，不是已有账号的密码重置方式。先确认 `.env` 中管理员信息已填写，再把域名反向代理公开到这个实例，避免尚未创建管理员时暴露初始化页面。
 
@@ -113,7 +113,7 @@ cd /opt/open-webui-repo/deploy/personal
 ./backup.sh
 # 记下刚生成的备份路径；只有备份成功才继续。
 nano .env
-# 只把 OPEN_WEBUI_IMAGE 改为已核实的新稳定版本，例如 ghcr.io/open-webui/open-webui:vX.Y.Z。
+# 只把 OPEN_WEBUI_IMAGE 改为已核实的新稳定版本，例如 ghcr.io/open-webui/open-webui:vX.Y.Z-slim。
 docker compose config --quiet
 docker compose pull open-webui
 # 只有拉取成功才继续。
@@ -166,7 +166,7 @@ docker compose up -d
 - 初期运行上游官方固定版本镜像。Fork 的同步、部署配置的更新、生产容器的升级是三个独立动作。
 - 优先通过提示词、模型预设、Functions/Filters/Actions 扩展。导出并审核自己的插件源码，放入 `extensions` 等版本管理目录；运行时配置及密钥留在服务器。
 - 只有需要修改应用源码时，才从个人分支创建功能分支并通过 PR 合并。执行手动镜像构建工作流会生成自己命名空间下、以提交 SHA 标识的镜像；把实际镜像地址写进服务器 `.env` 后才会部署。
-- 个人构建默认生成 `linux/amd64` 镜像。如果服务器是 ARM64，构建前需改用相应 runner/平台设置；上游官方镜像的多架构支持与这个自定义构建不是同一回事。GHCR 新创建的包可能是私有的：自用服务器需配置有 `read:packages` 权限的登录，或明确把不含私人内容的镜像包设为公开。
+- 个人构建默认使用 USE_SLIM=true，生成 `linux/amd64` slim 镜像。如果服务器是 ARM64，构建前需改用相应 runner/平台设置；上游官方镜像的多架构支持与这个自定义构建不是同一回事。GHCR 新创建的包可能是私有的：自用服务器需配置有 `read:packages` 权限的登录，或明确把不含私人内容的镜像包设为公开。
 - 源码升级：以个人分支为基础，把指定的上游稳定版合入升级分支，处理冲突、测试后再合并。GitHub 的 Sync fork 跟踪上游默认分支，不等同于选择稳定发布版本，不要把同步操作当作生产升级。
 - 个人分支已移除继承的上游工作流，只保留个人手动构建工作流；当前不会自动构建或部署。`main` 保留上游原始工作流文件，因此更新该跟踪分支前，先在 Settings → Actions → General 暂时禁用 Actions；完成同步后检查工作流列表，再恢复所需的个人手动工作流。不要恢复所有继承工作流来实现更新。
 
